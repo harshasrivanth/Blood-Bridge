@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BloodBridge</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="hero">
+        <div class="hero-inner">
+            <div class="brand">
+                <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 2.5c3.6 4.4 6.5 7.7 6.5 11.3a6.5 6.5 0 0 1-13 0C5.5 10.2 8.4 6.9 12 2.5z"/>
+                </svg>
+                <span>BloodBridge</span>
+            </div>
+            <h1>Find blood donors<br>before time runs out.</h1>
+            <p>Tell us the blood group, how many units, and the hospital. We connect your request to nearby donors.</p>
+            <div class="status" id="statusPill" data-state="checking">
+                <span class="dot"></span>
+                <span id="connection">Checking server…</span>
+                <button type="button" id="checkButton" class="link-btn">Check again</button>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section class="panel" aria-labelledby="formTitle">
+            <h2 id="formTitle">Emergency blood request</h2>
+
+            <form id="requestForm" novalidate>
+                <fieldset>
+                    <legend>Blood group</legend>
+                    <div class="groups" id="groups">
+                        <input type="radio" name="bloodGroup" id="bg-Ap" value="A+" required><label for="bg-Ap">A+</label>
+                        <input type="radio" name="bloodGroup" id="bg-An" value="A-"><label for="bg-An">A−</label>
+                        <input type="radio" name="bloodGroup" id="bg-Bp" value="B+"><label for="bg-Bp">B+</label>
+                        <input type="radio" name="bloodGroup" id="bg-Bn" value="B-"><label for="bg-Bn">B−</label>
+                        <input type="radio" name="bloodGroup" id="bg-ABp" value="AB+"><label for="bg-ABp">AB+</label>
+                        <input type="radio" name="bloodGroup" id="bg-ABn" value="AB-"><label for="bg-ABn">AB−</label>
+                        <input type="radio" name="bloodGroup" id="bg-Op" value="O+"><label for="bg-Op">O+</label>
+                        <input type="radio" name="bloodGroup" id="bg-On" value="O-"><label for="bg-On">O−</label>
+                    </div>
+                </fieldset>
+
+                <div class="field">
+                    <label for="units">Units required</label>
+                    <div class="stepper">
+                        <button type="button" id="minus" aria-label="Decrease units">−</button>
+                        <input id="units" type="number" min="1" max="10" value="1" required>
+                        <button type="button" id="plus" aria-label="Increase units">+</button>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="hospital">Hospital name</label>
+                    <input id="hospital" class="text" type="text" placeholder="e.g. Government General Hospital" required>
+                </div>
+
+                <button type="submit" class="primary">Send request</button>
+            </form>
+
+            <p id="result" role="status" aria-live="polite"></p>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>
