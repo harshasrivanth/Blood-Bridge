@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="BloodBridge helps coordinate blood requests and donor registration.">
     <title>BloodBridge</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -18,8 +19,8 @@
                 </svg>
                 <span>BloodBridge</span>
             </div>
-            <h1>Find blood donors<br>before time runs out.</h1>
-            <p>Tell us the blood group, how many units, and the hospital. We connect your request to nearby donors.</p>
+            <h1>Connect blood needs<br>with willing donors.</h1>
+            <p>Register as a donor or submit a blood request. BloodBridge finds basic matches by blood group and city.</p>
             <div class="status" id="statusPill" data-state="checking">
                 <span class="dot"></span>
                 <span id="connection">Checking server…</span>
@@ -29,12 +30,16 @@
     </header>
 
     <main>
-        <section class="panel" aria-labelledby="formTitle">
-            <h2 id="formTitle">Emergency blood request</h2>
+        <section class="panel" aria-labelledby="requestTitle">
+            <div class="section-heading">
+                <span class="eyebrow">NEED BLOOD?</span>
+                <h2 id="requestTitle">Emergency blood request</h2>
+                <p>Enter the required details. Use demo data while testing this prototype.</p>
+            </div>
 
             <form id="requestForm" novalidate>
                 <fieldset>
-                    <legend>Blood group</legend>
+                    <legend>Blood group needed</legend>
                     <div class="groups" id="groups">
                         <input type="radio" name="bloodGroup" id="bg-Ap" value="A+" required><label for="bg-Ap">A+</label>
                         <input type="radio" name="bloodGroup" id="bg-An" value="A-"><label for="bg-An">A−</label>
@@ -47,25 +52,94 @@
                     </div>
                 </fieldset>
 
-                <div class="field">
-                    <label for="units">Units required</label>
-                    <div class="stepper">
-                        <button type="button" id="minus" aria-label="Decrease units">−</button>
-                        <input id="units" type="number" min="1" max="10" value="1" required>
-                        <button type="button" id="plus" aria-label="Increase units">+</button>
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="units">Units required</label>
+                        <div class="stepper">
+                            <button type="button" id="minus" aria-label="Decrease units">−</button>
+                            <input id="units" type="number" min="1" max="10" value="1" required>
+                            <button type="button" id="plus" aria-label="Increase units">+</button>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="patientName">Patient name</label>
+                        <input id="patientName" class="text" type="text" maxlength="100" placeholder="Enter patient name" required>
+                    </div>
+                    <div class="field">
+                        <label for="hospital">Hospital name</label>
+                        <select id="hospital" class="text" required><option value="">Select hospital</option><option value="My hospital">My hospital (demo)</option></select>
+                    </div>
+                    <div class="field">
+                        <label for="patientEmail">Registered email</label>
+                        <input id="patientEmail" class="text" type="email" maxlength="254" placeholder="you@example.com" autocomplete="email" required>
+                    </div>
+                    <div class="field">
+                        <label for="city">City</label>
+                        <input id="city" class="text" type="text" maxlength="100" placeholder="e.g. Vijayawada" required>
                     </div>
                 </div>
 
-                <div class="field">
-                    <label for="hospital">Hospital name</label>
-                    <input id="hospital" class="text" type="text" placeholder="e.g. Government General Hospital" required>
-                </div>
-
-                <button type="submit" class="primary">Send request</button>
+                <button type="submit" class="primary" id="requestSubmit">Submit blood request</button>
             </form>
-
-            <p id="result" role="status" aria-live="polite"></p>
+            <p id="result" class="notice" role="status" aria-live="polite"></p>
         </section>
+
+        <section class="panel" aria-labelledby="donorTitle">
+            <div class="section-heading">
+                <span class="eyebrow">WILLING TO HELP?</span>
+                <h2 id="donorTitle">Register as a donor</h2>
+                <p>Add a donor profile so it can appear in basic matching results when available.</p>
+            </div>
+
+            <form id="donorForm" novalidate>
+                <div class="form-grid">
+                    <div class="field">
+                        <label for="donorName">Full name</label>
+                        <input id="donorName" class="text" type="text" maxlength="100" placeholder="Enter donor name" required>
+                    </div>
+                    <div class="field">
+                        <label for="donorBloodGroup">Blood group</label>
+                        <select id="donorBloodGroup" class="text" required>
+                            <option value="">Select blood group</option>
+                            <option>A+</option><option>A-</option>
+                            <option>B+</option><option>B-</option>
+                            <option>AB+</option><option>AB-</option>
+                            <option>O+</option><option>O-</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="donorPhone">Phone</label>
+                        <input
+                            id="donorPhone"
+                            class="text"
+                            type="tel"
+                            maxlength="10"
+                            minlength="10"
+                            pattern="[6-9][0-9]{9}"
+                            placeholder="Enter 10-digit mobile number"
+                            title="Enter a valid 10-digit Indian mobile number"
+                            required
+                        >
+                        <label class="check-row" for="donorConsent"><input id="donorConsent" type="checkbox" required><span>I consent to sharing my phone number with a matched requester by email.</span></label>
+                    </div>
+                    <div class="field">
+                        <label for="donorCity">City</label>
+                        <input id="donorCity" class="text" type="text" maxlength="100" placeholder="e.g. Vijayawada" required>
+                    </div>
+                </div>
+                <label class="check-row" for="donorAvailable">
+                    <input id="donorAvailable" type="checkbox" checked>
+                    <span>Mark me as currently available</span>
+                </label>
+                <button type="submit" class="primary secondary-primary" id="donorSubmit">Register donor</button>
+            </form>
+            <p id="donorResult" class="notice" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="safety-note">
+            <strong>Important:</strong> BloodBridge is a prototype coordination tool. Matches are based only on blood group, city, and the donor's availability setting. Hospital/blood-bank staff must confirm donor eligibility, compatibility, and all clinical decisions. For emergencies, contact the hospital or local emergency services directly.
+        </section>
+        <footer>BloodBridge · Prototype build</footer>
     </main>
 
     <script src="app.js"></script>
