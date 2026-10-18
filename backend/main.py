@@ -227,10 +227,10 @@ def send_donor_email(
 
     except (OSError, smtplib.SMTPException) as exc:
     # Never print passwords or donor contact details.
-    print(
-        "BloodBridge email delivery failed:"
-        f"{type(exc).__name__}: {str(exc)}"
-    )
+        print(
+            "BloodBridge email delivery failed:"
+            f"{type(exc).__name__}: {str(exc)}"
+        )
     return False
 
 
