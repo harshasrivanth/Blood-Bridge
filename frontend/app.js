@@ -1,4 +1,4 @@
-const API = "http://127.0.0.1:8000";
+const API = "https://blood-bridge-e84w.onrender.com";
 const connection = document.getElementById("connection");
 const statusPill = document.getElementById("statusPill");
 const result = document.getElementById("result");
