@@ -1,8 +1,7 @@
 
 import os
-import smtplib
+import resend
 from contextlib import asynccontextmanager
-from email.message import EmailMessage
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
@@ -163,44 +162,32 @@ def remove_duplicate_donors(
     return unique_donors
 
 
+
 def send_donor_email(
     to_email: str,
     request: models.BloodRequest,
     donors: list[models.Donor],
 ) -> bool:
     """Email matching donor profiles whose owners consented."""
-    smtp_email = os.getenv("SMTP_EMAIL")
-    smtp_password = os.getenv("SMTP_APP_PASSWORD")
+    api_key = os.getenv("RESEND_API_KEY")
+    from_email = os.getenv("RESEND_FROM_EMAIL")
 
-    if not smtp_email or not smtp_password:
-        print("BloodBridge email delivery is not configured.")
+    if not api_key or not from_email:
+        print("BloodBridge Resend email is not configured.")
         return False
 
-    message = EmailMessage()
-
-    message["Subject"] = (
-        f"BloodBridge: matching donors for request "
-        f"#{request.request_id}"
-    )
-
-    message["From"] = smtp_email
-    message["To"] = to_email
-
     donor_rows = []
-
     for donor in donors:
         donor_rows.append(
-            "\n".join(
-                [
-                    f"Name: {donor.full_name}",
-                    f"Blood group: {donor.blood_group}",
-                    f"City: {donor.city}",
-                    f"Contact: {donor.phone or 'Contact unavailable'}",
-                ]
-            )
+            "\n".join([
+                f"Name: {donor.full_name}",
+                f"Blood group: {donor.blood_group}",
+                f"City: {donor.city}",
+                f"Contact: {donor.phone or 'Contact unavailable'}",
+            ])
         )
 
-    message.set_content(
+    body = (
         "BloodBridge found donor profiles matching the "
         "requested blood group and city.\n\n"
         f"Request ID: {request.request_id}\n"
@@ -214,24 +201,21 @@ def send_donor_email(
     )
 
     try:
-        with smtplib.SMTP(
-            "smtp.gmail.com",
-            587,
-            timeout=20,
-        ) as server:
-            server.starttls()
-            server.login(smtp_email, smtp_password)
-            server.send_message(message)
-
+        resend.api_key = api_key
+        resend.Emails.send({
+            "from": from_email,
+            "to": [to_email],
+            "subject": (
+                f"BloodBridge: matching donors for request "
+                f"#{request.request_id}"
+            ),
+            "text": body,
+        })
         return True
 
-    except (OSError, smtplib.SMTPException) as exc:
-    # Never print passwords or donor contact details.
-        print(
-            "BloodBridge email delivery failed:"
-            f"{type(exc).__name__}: {str(exc)}"
-        )
-    return False
+    except Exception as exc:
+        print(f"BloodBridge email delivery failed: {type(exc).__name__}")
+        return False
 
 
 @app.post(
