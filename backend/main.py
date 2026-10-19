@@ -24,11 +24,6 @@ NO_DONORS_MESSAGE = (
     "Please contact the hospital blood bank for assistance."
 )
 
-VERIFICATION_PENDING_MESSAGE = (
-    "Your request has been received. Donor details will only be shared "
-    "after hospital or blood-bank verification."
-)
-
 
 def initialize_database() -> None:
     """Create tables and apply safe additive migrations."""
@@ -244,6 +239,7 @@ def send_donor_email(
         return False
 
 
+
 @app.post(
     "/donors",
     response_model=schemas.DonorResponse,
@@ -340,15 +336,27 @@ def create_blood_request(
     # Matching is preliminary only. Do not disclose donor details by email
     # until a hospital/blood-bank verification workflow marks the request
     # status as "verified" and explicitly invokes send_donor_email().
+    donors = remove_duplicate_donors(donors)
+
     if not donors:
         return {
             "request_id": new_request.request_id,
             "message": NO_DONORS_MESSAGE,
         }
 
+    if send_donor_email(
+        new_request.patient_email,
+        new_request,
+        donors,
+    ):
+        return {
+            "request_id": new_request.request_id,
+            "message": SENT_MESSAGE,
+        }
+
     return {
         "request_id": new_request.request_id,
-        "message": VERIFICATION_PENDING_MESSAGE,
+        "message": EMAIL_FAILED_MESSAGE,
     }
 
 
