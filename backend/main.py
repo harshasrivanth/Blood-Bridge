@@ -1,7 +1,9 @@
 
+import json
 import os
-import resend
 from contextlib import asynccontextmanager
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
@@ -22,11 +24,9 @@ NO_DONORS_MESSAGE = (
     "Please contact the hospital blood bank for assistance."
 )
 
-SENT_MESSAGE = "Donors list is sent to registered mail."
-
-EMAIL_FAILED_MESSAGE = (
-    "We couldn't send the email right now. Please try again later "
-    "or contact the hospital blood bank."
+VERIFICATION_PENDING_MESSAGE = (
+    "Your request has been received. Donor details will only be shared "
+    "after hospital or blood-bank verification."
 )
 
 
@@ -168,16 +168,31 @@ def send_donor_email(
     request: models.BloodRequest,
     donors: list[models.Donor],
 ) -> bool:
-    """Email matching donor profiles whose owners consented."""
-    api_key = os.getenv("RESEND_API_KEY")
-    from_email = os.getenv("RESEND_FROM_EMAIL")
+    """Email consenting donor profiles only after a request is verified."""
+    if (getattr(request, "status", "") or "").strip().lower() != "verified":
+        print("BloodBridge email skipped: request has not been verified.")
+        return False
 
-    if not api_key or not from_email:
-        print("BloodBridge Resend email is not configured.")
+    script_url = os.getenv("GOOGLE_SCRIPT_URL")
+    script_secret = os.getenv("GOOGLE_SCRIPT_SECRET")
+
+    if not script_url or not script_secret:
+        print("BloodBridge Google Apps Script email relay is not configured.")
+        return False
+
+    # Only include donors who explicitly consented to sharing their contact.
+    consenting_donors = [
+        donor for donor in donors
+        if donor.consent_to_share_contact and donor.is_available
+    ]
+    consenting_donors = remove_duplicate_donors(consenting_donors)
+
+    if not consenting_donors:
+        print("BloodBridge email skipped: no consenting available donors.")
         return False
 
     donor_rows = []
-    for donor in donors:
+    for donor in consenting_donors:
         donor_rows.append(
             "\n".join([
                 f"Name: {donor.full_name}",
@@ -188,34 +203,45 @@ def send_donor_email(
         )
 
     body = (
-        "BloodBridge found donor profiles matching the "
-        "requested blood group and city.\n\n"
+        "BloodBridge has a verified request with matching donor profiles.\n\n"
         f"Request ID: {request.request_id}\n"
         f"Blood group: {request.blood_group}\n"
         f"City: {request.city}\n"
         f"Units requested: {request.units_required}\n\n"
         + "\n\n---\n\n".join(donor_rows)
-        + "\n\nImportant: These are preliminary directory matches only. "
-        "Hospital or blood-bank staff must confirm donor eligibility, "
-        "compatibility, and availability before any clinical decision."
+        + "\n\nImportant: Hospital or blood-bank staff must confirm donor "
+        "eligibility, compatibility, and availability before any clinical decision."
+    )
+
+    payload = {
+        "secret": script_secret,
+        "to": to_email,
+        "subject": f"BloodBridge: verified matches for request #{request.request_id}",
+        "body": body,
+    }
+    data = json.dumps(payload).encode("utf-8")
+    relay_request = Request(
+        script_url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
     )
 
     try:
-        resend.api_key = api_key
-        resend.Emails.send({
-            "from": from_email,
-            "to": [to_email],
-            "subject": (
-                f"BloodBridge: matching donors for request "
-                f"#{request.request_id}"
-            ),
-            "text": body,
-        })
-        return True
+        with urlopen(relay_request, timeout=25) as response:
+            response_body = response.read().decode("utf-8")
 
-    except Exception as exc:
-            print(f"BloodBridge email delivery failed: {type(exc).__name__}: {exc}")
-            return False
+        result = json.loads(response_body)
+        if result.get("success") is True:
+            return True
+
+        print("BloodBridge email relay rejected the request.")
+        return False
+
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+        # Do not log the request payload, secret, patient email, or donor details.
+        print(f"BloodBridge email relay failed: {type(exc).__name__}")
+        return False
 
 
 @app.post(
@@ -311,28 +337,18 @@ def create_blood_request(
         .all()
     )
 
-    # Remove duplicate contact numbers before sending the email.
-    donors = remove_duplicate_donors(donors)
-
+    # Matching is preliminary only. Do not disclose donor details by email
+    # until a hospital/blood-bank verification workflow marks the request
+    # status as "verified" and explicitly invokes send_donor_email().
     if not donors:
         return {
             "request_id": new_request.request_id,
             "message": NO_DONORS_MESSAGE,
         }
 
-    if send_donor_email(
-        new_request.patient_email,
-        new_request,
-        donors,
-    ):
-        return {
-            "request_id": new_request.request_id,
-            "message": SENT_MESSAGE,
-        }
-
     return {
         "request_id": new_request.request_id,
-        "message": EMAIL_FAILED_MESSAGE,
+        "message": VERIFICATION_PENDING_MESSAGE,
     }
 
 
