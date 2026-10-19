@@ -214,8 +214,8 @@ def send_donor_email(
         return True
 
     except Exception as exc:
-        print(f"BloodBridge email delivery failed: {type(exc).__name__}")
-        return False
+            print(f"BloodBridge email delivery failed: {type(exc).__name__}: {exc}")
+            return False
 
 
 @app.post(
