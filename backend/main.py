@@ -23,6 +23,11 @@ NO_DONORS_MESSAGE = (
     "No matching donors are available right now. "
     "Please contact the hospital blood bank for assistance."
 )
+SENT_MESSAGE = "Your request was received and matching donor information was emailed."
+EMAIL_FAILED_MESSAGE = (
+    "Your request was saved, but the email could not be sent. "
+    "Please contact the hospital blood bank."
+)
 
 
 def initialize_database() -> None:
@@ -163,10 +168,10 @@ def send_donor_email(
     request: models.BloodRequest,
     donors: list[models.Donor],
 ) -> bool:
-    """Email consenting donor profiles only after a request is verified."""
-    if (getattr(request, "status", "") or "").strip().lower() != "verified":
-        print("BloodBridge email skipped: request has not been verified.")
-        return False
+    """Email matching, available donor profiles who consented to contact sharing.
+
+    Version 0.5 sends immediately; add hospital verification in a later version.
+    """
 
     script_url = os.getenv("GOOGLE_SCRIPT_URL")
     script_secret = os.getenv("GOOGLE_SCRIPT_SECRET")
@@ -333,9 +338,8 @@ def create_blood_request(
         .all()
     )
 
-    # Matching is preliminary only. Do not disclose donor details by email
-    # until a hospital/blood-bank verification workflow marks the request
-    # status as "verified" and explicitly invokes send_donor_email().
+    # Version 0.5 sends email immediately to the requester when consenting,
+    # available donors match. This is a prototype, not a clinical decision tool.
     donors = remove_duplicate_donors(donors)
 
     if not donors:
