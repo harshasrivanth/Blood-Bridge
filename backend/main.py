@@ -21,7 +21,23 @@ from html import escape
 
 load_dotenv()
 
-DEMO_HOSPITAL_NAME = "My hospital"
+DEMO_HOSPITALS = [
+    {
+        "name": "Hospital 1 - Vizag",
+        "city": "Visakhapatnam",
+        "marker": "BB-DEMO-VIZAG-ONLY",
+    },
+    {
+        "name": "Hospital 2 - Vijayawada",
+        "city": "Vijayawada",
+        "marker": "BB-DEMO-VIJAYAWADA-ONLY",
+    },
+    {
+        "name": "Hospital 3 - Hyderabad",
+        "city": "Hyderabad",
+        "marker": "BB-DEMO-HYDERABAD-ONLY",
+    },
+]
 
 NO_DONORS_MESSAGE = (
     "No matching donors are available right now. "
@@ -35,7 +51,7 @@ EMAIL_FAILED_MESSAGE = (
 
 
 def initialize_database() -> None:
-    """Create tables and apply safe additive migrations."""
+    """Create tables, apply additive migrations, and seed demo hospitals."""
     Base.metadata.create_all(bind=engine)
 
     with engine.begin() as connection:
@@ -43,7 +59,6 @@ def initialize_database() -> None:
             column["name"]
             for column in inspect(engine).get_columns("donors")
         }
-
         if "consent_to_share_contact" not in donor_columns:
             connection.execute(
                 text(
@@ -56,7 +71,6 @@ def initialize_database() -> None:
             column["name"]
             for column in inspect(engine).get_columns("blood_requests")
         }
-
         if "patient_email" not in request_columns:
             connection.execute(
                 text(
@@ -83,35 +97,39 @@ def initialize_database() -> None:
                     "ADD COLUMN stamp_reference_text VARCHAR(100)"
                 )
             )
-
-    db = SessionLocal()
-
-    try:
-        hospital = (
-            db.query(models.Hospital)
-            .filter(
-                func.lower(models.Hospital.name)
-                == DEMO_HOSPITAL_NAME.lower()
-            )
-            .first()
-        )
-
-        if hospital is None:
-            db.add(
-                models.Hospital(
-                    name=DEMO_HOSPITAL_NAME,
-                    is_demo=True,
-                    stamp_reference_text="NOT AN OFFICIAL STAMP",
+        if "city" not in hospital_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE hospitals ADD COLUMN "
+                    "city VARCHAR(100) NOT NULL DEFAULT ''"
                 )
             )
-            db.commit()
-        elif not hospital.stamp_reference_text:
-            # Backfill the existing demo row without deleting hospital records.
-            hospital.stamp_reference_text = "NOT AN OFFICIAL STAMP"
-            db.commit()
+
+    db = SessionLocal()
+    try:
+        for item in DEMO_HOSPITALS:
+            hospital = (
+                db.query(models.Hospital)
+                .filter(
+                    func.lower(func.trim(models.Hospital.name))
+                    == item["name"].lower()
+                )
+                .first()
+            )
+            if hospital is None:
+                hospital = models.Hospital(name=item["name"])
+                db.add(hospital)
+
+            hospital.city = item["city"]
+            hospital.is_demo = True
+            hospital.stamp_reference_text = item["marker"]
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -418,6 +436,7 @@ async def create_blood_request(
         db.query(models.Hospital)
         .filter(
             func.lower(func.trim(models.Hospital.name)) == requested_hospital.lower(),
+            func.lower(func.trim(models.Hospital.city)) == city.strip().lower(),
             models.Hospital.is_demo.is_(True),
         )
         .first()
@@ -432,7 +451,7 @@ async def create_blood_request(
     # PDF text is checked against registered demo markers; this is NOT image matching
     # or real-world hospital authenticity verification.
     if hospital_document.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Upload the provided My Hospital demo PDF.")
+        raise HTTPException(status_code=400, detail="Upload the matching hospital demo PDF for the selected city.")
     document_bytes = await hospital_document.read()
     if not document_bytes.startswith(b"%PDF-"):
         raise HTTPException(status_code=400, detail="The uploaded file is not a valid PDF.")
@@ -475,9 +494,9 @@ async def create_blood_request(
         raise HTTPException(
             status_code=400,
             detail=(
-                "Demo PDF verification failed. The searchable PDF must "
-                "contain the registered hospital name and required demo "
-                "markers. No donor email was sent."
+                "Demo PDF verification failed. Upload the matching searchable PDF "
+                "for the selected hospital, including its registered demo marker. "
+                "No donor email was sent."
             ),
         )
 
