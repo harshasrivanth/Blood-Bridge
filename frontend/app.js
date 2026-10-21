@@ -11,9 +11,9 @@ const hospitalSelect = document.getElementById("hospital");
 
 // Local prototype list matching the three demo rows in the local hospitals table.
 const hospitalsByCity = {
-    "Visakhapatnam": ["Hospital 1 - Vizag"],
-    "Vijayawada": ["Hospital 2 - Vijayawada"],
-    "Hyderabad": ["Hospital 3 - Hyderabad"]
+    "Visakhapatnam": ["My hospital"],
+    "Vijayawada": ["My hospital"],
+    "Hyderabad": ["My hospital"]
 };
 
 citySelect.addEventListener("change", () => {
