@@ -228,3 +228,10 @@ footer { padding: 18px 0 4px; text-align: center; color: var(--muted); font-size
 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Area-dependent hospital selector */
+.text:disabled {
+    background: #eef2f8;
+    color: #718096;
+    cursor: not-allowed;
+}

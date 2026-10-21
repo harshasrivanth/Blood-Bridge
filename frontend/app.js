@@ -1,4 +1,4 @@
-const API = "https://blood-bridge-e84w.onrender.com";
+const API = "http://127.0.0.1:8000";
 const connection = document.getElementById("connection");
 const statusPill = document.getElementById("statusPill");
 const result = document.getElementById("result");
@@ -6,6 +6,30 @@ const unitsInput = document.getElementById("units");
 const requestForm = document.getElementById("requestForm");
 const donorForm = document.getElementById("donorForm");
 const donorResult = document.getElementById("donorResult");
+const citySelect = document.getElementById("city");
+const hospitalSelect = document.getElementById("hospital");
+
+// Local prototype list matching the three demo rows in the local hospitals table.
+const hospitalsByCity = {
+    "Visakhapatnam": ["Hospital 1 - Vizag"],
+    "Vijayawada": ["Hospital 2 - Vijayawada"],
+    "Hyderabad": ["Hospital 3 - Hyderabad"]
+};
+
+citySelect.addEventListener("change", () => {
+    const city = citySelect.value;
+    hospitalSelect.innerHTML = "";
+
+    if (!city || !hospitalsByCity[city]) {
+        hospitalSelect.add(new Option("Select an area first", ""));
+        hospitalSelect.disabled = true;
+        return;
+    }
+
+    hospitalSelect.add(new Option("Select hospital", ""));
+    hospitalsByCity[city].forEach(name => hospitalSelect.add(new Option(`${name} (demo)`, name)));
+    hospitalSelect.disabled = false;
+});
 
 function setStatus(state, text) {
     statusPill.dataset.state = state;
@@ -48,6 +72,7 @@ requestForm.addEventListener("submit", async event => {
     const patientEmail = document.getElementById("patientEmail").value.trim();
     const hospital = document.getElementById("hospital").value;
     const city = document.getElementById("city").value.trim();
+    const hospitalDocument = document.getElementById("hospitalDocument").files[0];
     const units = Number(unitsInput.value);
 
     if (!group) {
@@ -55,9 +80,14 @@ requestForm.addEventListener("submit", async event => {
         result.textContent = "Please select the required blood group.";
         return;
     }
-    if (!patientName || !patientEmail || !hospital || !city) {
+    if (!patientName || !patientEmail || !hospital || !city || !hospitalDocument) {
         result.classList.add("error");
-        result.textContent = "Please complete all required fields.";
+        result.textContent = "Please complete all required fields and upload the My Hospital demo PDF.";
+        return;
+    }
+    if (hospitalDocument.type !== "application/pdf" || hospitalDocument.size > 5 * 1024 * 1024) {
+        result.classList.add("error");
+        result.textContent = "Upload a PDF file of 5 MB or smaller.";
         return;
     }
     if (!Number.isInteger(units) || units < 1 || units > 10) {
@@ -66,15 +96,15 @@ requestForm.addEventListener("submit", async event => {
         return;
     }
 
-    const requestData = {
-        patient_name: patientName,
-        patient_email: patientEmail,
-        blood_group: group.value,
-        units_required: units,
-        hospital_name: hospital,
-        city,
-        urgency: "high"
-    };
+    const requestData = new FormData();
+    requestData.append("patient_name", patientName);
+    requestData.append("patient_email", patientEmail);
+    requestData.append("blood_group", group.value);
+    requestData.append("units_required", String(units));
+    requestData.append("hospital_name", hospital);
+    requestData.append("city", city);
+    requestData.append("urgency", "high");
+    requestData.append("hospital_document", hospitalDocument);
 
     const submitButton = document.getElementById("requestSubmit");
     submitButton.disabled = true;
@@ -83,16 +113,17 @@ requestForm.addEventListener("submit", async event => {
     try {
         const response = await fetch(`${API}/requests`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(requestData)
+            body: requestData
         });
         const data = await response.json();
         if (!response.ok) throw new Error(getErrorMessage(data, "Request could not be processed."));
 
-        result.classList.add(data.message === "Donors list is sent to registered mail." ? "success" : "notice-result");
+        result.classList.add(data.message.toLowerCase().includes("emailed") ? "success" : "notice-result");
         result.textContent = data.message;
         requestForm.reset();
         unitsInput.value = 1;
+        hospitalSelect.innerHTML = '<option value="">Select an area first</option>';
+        hospitalSelect.disabled = true;
     } catch (error) {
         result.classList.add("error");
         result.textContent = error.message === "Failed to fetch"

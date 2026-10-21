@@ -6,14 +6,18 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
+from pypdf import PdfReader
+from io import BytesIO
 
 from database import Base, engine, SessionLocal
 import models
 import schemas
+
+from html import escape
 
 load_dotenv()
 
@@ -61,6 +65,18 @@ def initialize_database() -> None:
                 )
             )
 
+        hospital_columns = {
+            column["name"]
+            for column in inspect(engine).get_columns("hospitals")
+        }
+        if "stamp_reference_text" not in hospital_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE hospitals "
+                    "ADD COLUMN stamp_reference_text VARCHAR(100)"
+                )
+            )
+
     db = SessionLocal()
 
     try:
@@ -78,8 +94,13 @@ def initialize_database() -> None:
                 models.Hospital(
                     name=DEMO_HOSPITAL_NAME,
                     is_demo=True,
+                    stamp_reference_text="NOT AN OFFICIAL STAMP",
                 )
             )
+            db.commit()
+        elif not hospital.stamp_reference_text:
+            # Backfill the existing demo row without deleting hospital records.
+            hospital.stamp_reference_text = "NOT AN OFFICIAL STAMP"
             db.commit()
     finally:
         db.close()
@@ -109,6 +130,15 @@ app.add_middleware(
 )
 
 
+def get_db():
+    db = SessionLocal()
+
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 @app.get("/")
 def home():
     return {"message": "Welcome to BloodBridge"}
@@ -118,6 +148,31 @@ def home():
 def health():
     return {"status": "running"}
 
+@app.get("/hospitals")
+def get_hospitals(
+    city: str,
+    db: Session = Depends(get_db),
+):
+    hospitals = (
+        db.query(models.Hospital)
+        .filter(
+            func.lower(func.trim(models.Hospital.city))
+            == city.strip().lower()
+        )
+        .order_by(models.Hospital.name.asc())
+        .all()
+    )
+
+    return [
+        {
+            "hospital_id": hospital.hospital_id,
+            "name": hospital.name,
+            "city": hospital.city,
+            "is_demo": hospital.is_demo,
+        }
+        for hospital in hospitals
+    ]
+
 
 @app.get("/db-health")
 def database_health():
@@ -125,15 +180,6 @@ def database_health():
         connection.exec_driver_sql("SELECT 1")
 
     return {"database": "connected"}
-
-
-def get_db():
-    db = SessionLocal()
-
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def remove_duplicate_donors(
@@ -163,16 +209,13 @@ def remove_duplicate_donors(
 
 
 
+
 def send_donor_email(
     to_email: str,
     request: models.BloodRequest,
     donors: list[models.Donor],
 ) -> bool:
-    """Email matching, available donor profiles who consented to contact sharing.
-
-    Version 0.5 sends immediately; add hospital verification in a later version.
-    """
-
+    """Email a formatted list of available donors who consented to contact sharing."""
     script_url = os.getenv("GOOGLE_SCRIPT_URL")
     script_secret = os.getenv("GOOGLE_SCRIPT_SECRET")
 
@@ -180,7 +223,6 @@ def send_donor_email(
         print("BloodBridge Google Apps Script email relay is not configured.")
         return False
 
-    # Only include donors who explicitly consented to sharing their contact.
     consenting_donors = [
         donor for donor in donors
         if donor.consent_to_share_contact and donor.is_available
@@ -191,33 +233,93 @@ def send_donor_email(
         print("BloodBridge email skipped: no consenting available donors.")
         return False
 
-    donor_rows = []
-    for donor in consenting_donors:
-        donor_rows.append(
-            "\n".join([
-                f"Name: {donor.full_name}",
-                f"Blood group: {donor.blood_group}",
-                f"City: {donor.city}",
-                f"Contact: {donor.phone or 'Contact unavailable'}",
-            ])
+    rows_html = []
+    text_rows = []
+
+    for serial, donor in enumerate(consenting_donors, start=1):
+        name = escape(donor.full_name or "Name unavailable")
+        donor_city = escape(donor.city or "City unavailable")
+        phone = escape(donor.phone or "Contact unavailable")
+
+        rows_html.append(
+            "<tr>"
+            f'<td style="padding:10px;border:1px solid #dbe3ef;text-align:center">{serial}</td>'
+            f'<td style="padding:10px;border:1px solid #dbe3ef">{name}</td>'
+            f'<td style="padding:10px;border:1px solid #dbe3ef">{donor_city}</td>'
+            f'<td style="padding:10px;border:1px solid #dbe3ef">{phone}</td>'
+            "</tr>"
+        )
+        text_rows.append(
+            f"{serial}. {donor.full_name or 'Name unavailable'} | "
+            f"{donor.city or 'City unavailable'} | "
+            f"{donor.phone or 'Contact unavailable'}"
         )
 
-    body = (
-        "BloodBridge has a verified request with matching donor profiles.\n\n"
-        f"Request ID: {request.request_id}\n"
-        f"Blood group: {request.blood_group}\n"
+    blood_group = escape(request.blood_group or "N/A")
+    request_city = escape(request.city or "N/A")
+    units = request.units_required
+    subject = f"BloodBridge: {request.blood_group} donor matches"
+
+    html_body = f"""
+    <div style="font-family:Arial,sans-serif;color:#243047;max-width:720px;margin:auto;line-height:1.6">
+      <div style="background:#1758c7;color:#fff;padding:22px;border-radius:10px 10px 0 0">
+        <h1 style="margin:0">BloodBridge</h1>
+        <p style="margin:6px 0 0">Connecting people who need blood with willing donors</p>
+      </div>
+      <div style="padding:24px;border:1px solid #dbe3ef">
+        <h2 style="color:#1758c7">Matching donor information</h2>
+        <p>The prototype document check passed and potential donor profiles matching the requested blood group and city were found.</p>
+        <table style="width:100%;border-collapse:collapse;margin:18px 0">
+          <tr style="background:#eef4ff">
+            <td style="padding:10px"><strong>Blood group needed</strong></td>
+            <td style="padding:10px">{blood_group}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px"><strong>City</strong></td>
+            <td style="padding:10px">{request_city}</td>
+          </tr>
+          <tr style="background:#eef4ff">
+            <td style="padding:10px"><strong>Units requested</strong></td>
+            <td style="padding:10px">{units}</td>
+          </tr>
+        </table>
+        <h3>Donor contact list</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:14px">
+          <thead><tr style="background:#1758c7;color:#fff">
+            <th style="padding:10px;border:1px solid #dbe3ef">S. No.</th>
+            <th style="padding:10px;border:1px solid #dbe3ef">Donor Name</th>
+            <th style="padding:10px;border:1px solid #dbe3ef">City</th>
+            <th style="padding:10px;border:1px solid #dbe3ef">Phone Number</th>
+          </tr></thead>
+          <tbody>{''.join(rows_html)}</tbody>
+        </table>
+        <p style="margin-top:24px">Thank you for using <strong>BloodBridge</strong>. We hope this connection helps you reach the support you need.</p>
+        <div style="background:#fff7e6;border:1px solid #f4d28b;padding:14px;border-radius:8px;font-size:13px">
+          <strong>Important:</strong> These are potential donor matches only. Hospital or blood-bank staff must confirm donor eligibility, blood compatibility, and availability before any clinical decision. This prototype email does not guarantee blood availability.
+        </div>
+      </div>
+      <p style="font-size:12px;color:#65728a;text-align:center;padding:12px">BloodBridge · Prototype build · Thank you</p>
+    </div>
+    """
+
+    plain_body = (
+        "BloodBridge - Matching donor information\n\n"
+        f"Blood group needed: {request.blood_group}\n"
         f"City: {request.city}\n"
         f"Units requested: {request.units_required}\n\n"
-        + "\n\n---\n\n".join(donor_rows)
-        + "\n\nImportant: Hospital or blood-bank staff must confirm donor "
-        "eligibility, compatibility, and availability before any clinical decision."
+        "S. No. | Donor Name | City | Phone Number\n"
+        + "\n".join(text_rows)
+        + "\n\nThank you for using BloodBridge.\n\n"
+        "Important: Hospital or blood-bank staff must confirm donor eligibility, "
+        "compatibility, and availability before any clinical decision."
     )
 
     payload = {
         "secret": script_secret,
         "to": to_email,
-        "subject": f"BloodBridge: verified matches for request #{request.request_id}",
-        "body": body,
+        "subject": subject,
+        "body": plain_body,
+        "htmlBody": html_body,
     }
     data = json.dumps(payload).encode("utf-8")
     relay_request = Request(
@@ -230,19 +332,18 @@ def send_donor_email(
     try:
         with urlopen(relay_request, timeout=25) as response:
             response_body = response.read().decode("utf-8")
-
         result = json.loads(response_body)
         if result.get("success") is True:
             return True
-
         print("BloodBridge email relay rejected the request.")
         return False
-
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
-        # Do not log the request payload, secret, patient email, or donor details.
-        print(f"BloodBridge email relay failed: {type(exc).__name__}")
+        # Do not log secrets, patient email, or donor details.
+        print(
+            f"BloodBridge email relay failed: {type(exc).__name__}, "
+            f"code={getattr(exc, 'code', 'N/A')}"
+        )
         return False
-
 
 
 @app.post(
@@ -279,83 +380,116 @@ def donors_private():
     )
 
 
-@app.post(
-    "/requests",
-    response_model=schemas.BloodRequestResponse,
-)
-def create_blood_request(
-    request: schemas.BloodRequestCreate,
+@app.post("/requests", response_model=schemas.BloodRequestResponse)
+async def create_blood_request(
+    patient_name: str = Form(..., min_length=2, max_length=100),
+    patient_email: str = Form(...),
+    blood_group: str = Form(...),
+    units_required: int = Form(..., ge=1, le=10),
+    hospital_name: str = Form(..., min_length=2, max_length=150),
+    city: str = Form(..., min_length=2, max_length=100),
+    urgency: str = Form("high"),
+    hospital_document: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-    requested_hospital = request.hospital_name.strip()
+    """Prototype gate: check PDF text against registered demo hospital data before email."""
+    from email_validator import validate_email, EmailNotValidError
 
+    try:
+        validated_email = validate_email(patient_email, check_deliverability=False).normalized
+    except EmailNotValidError:
+        raise HTTPException(status_code=422, detail="Enter a valid email address.")
+
+    allowed_groups = {"A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"}
+    if blood_group.strip().upper() not in allowed_groups:
+        raise HTTPException(status_code=422, detail="Select a valid blood group.")
+    if urgency not in {"critical", "high", "medium", "low"}:
+        raise HTTPException(status_code=422, detail="Select a valid urgency.")
+
+    requested_hospital = hospital_name.strip()
     hospital = (
         db.query(models.Hospital)
         .filter(
-            func.lower(func.trim(models.Hospital.name))
-            == requested_hospital.lower(),
+            func.lower(func.trim(models.Hospital.name)) == requested_hospital.lower(),
             models.Hospital.is_demo.is_(True),
         )
         .first()
     )
-
     if hospital is None:
         raise HTTPException(
             status_code=400,
+            detail="This demo version accepts requests for the registered demo hospital only.",
+        )
+
+    # This prototype accepts a searchable PDF, not photos or scanned image-only PDFs.
+    # PDF text is checked against registered demo markers; this is NOT image matching
+    # or real-world hospital authenticity verification.
+    if hospital_document.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Upload the provided My Hospital demo PDF.")
+    document_bytes = await hospital_document.read()
+    if not document_bytes.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="The uploaded file is not a valid PDF.")
+    if len(document_bytes) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="PDF must be 5 MB or smaller.")
+
+    try:
+        pdf = PdfReader(BytesIO(document_bytes))
+        document_text = "\n".join(page.extract_text() or "" for page in pdf.pages).upper()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not read this PDF. Upload the provided demo sample.")
+
+    # Match the uploaded PDF against the specific hospital selected by the user.
+    # This is a demo text-marker check only, not proof of real-world authenticity.
+    stamp_marker = (hospital.stamp_reference_text or "").strip().upper()
+    required_markers = [hospital.name.strip().upper(), "DEMO DOCUMENT"]
+    if not stamp_marker or not all(
+        marker in document_text for marker in [*required_markers, stamp_marker]
+    ):
+        raise HTTPException(
+            status_code=400,
             detail=(
-                "This demo version accepts requests for the "
-                "registered demo hospital only."
+                "Demo verification failed. The PDF must contain the registered demo hospital "
+                "name and the required demo-only markers. No donor email was sent."
             ),
         )
 
     new_request = models.BloodRequest(
-        patient_name=request.patient_name.strip(),
-        patient_email=str(request.patient_email),
-        blood_group=request.blood_group.strip().upper(),
-        units_required=request.units_required,
+        patient_name=patient_name.strip(),
+        patient_email=validated_email,
+        blood_group=blood_group.strip().upper(),
+        units_required=units_required,
         hospital_name=hospital.name,
-        city=request.city.strip(),
-        urgency=request.urgency,
+        city=city.strip(),
+        urgency=urgency,
         status="open",
     )
-
     db.add(new_request)
     db.commit()
     db.refresh(new_request)
 
-    # Match blood group, city, availability, and explicit consent.
     donors = (
         db.query(models.Donor)
         .filter(
-            func.upper(func.trim(models.Donor.blood_group))
-            == new_request.blood_group.upper(),
-            func.lower(func.trim(models.Donor.city))
-            == new_request.city.strip().lower(),
+            func.upper(func.trim(models.Donor.blood_group)) == new_request.blood_group,
+            func.lower(func.trim(models.Donor.city)) == new_request.city.lower(),
             models.Donor.is_available.is_(True),
             models.Donor.consent_to_share_contact.is_(True),
         )
         .order_by(models.Donor.donor_id.asc())
         .all()
     )
-
-    # Version 0.5 sends email immediately to the requester when consenting,
-    # available donors match. This is a prototype, not a clinical decision tool.
     donors = remove_duplicate_donors(donors)
 
     if not donors:
         return {
             "request_id": new_request.request_id,
-            "message": NO_DONORS_MESSAGE,
+            "message": "Demo document check passed, but no matching consenting donors are available.",
         }
 
-    if send_donor_email(
-        new_request.patient_email,
-        new_request,
-        donors,
-    ):
+    if send_donor_email(new_request.patient_email, new_request, donors):
         return {
             "request_id": new_request.request_id,
-            "message": SENT_MESSAGE,
+            "message": "Demo document check passed. Matching donor information was emailed.",
         }
 
     return {

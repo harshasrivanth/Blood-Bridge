@@ -5,3 +5,5 @@ psycopg[binary]
 python-dotenv
 email-validator
 resend
+python-multipart
+pypdf

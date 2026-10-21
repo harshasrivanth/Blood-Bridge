@@ -34,7 +34,7 @@
             <div class="section-heading">
                 <span class="eyebrow">NEED BLOOD?</span>
                 <h2 id="requestTitle">Emergency blood request</h2>
-                <p>Enter the required details. Use demo data while testing this prototype.</p>
+                <p>Enter the required details and upload the fictional demo PDF. Choose an area to see its registered demo hospital. Upload the fictional demo PDF for prototype checking.</p>
             </div>
 
             <form id="requestForm" novalidate>
@@ -66,16 +66,29 @@
                         <input id="patientName" class="text" type="text" maxlength="100" placeholder="Enter patient name" required>
                     </div>
                     <div class="field">
-                        <label for="hospital">Hospital name</label>
-                        <select id="hospital" class="text" required><option value="">Select hospital</option><option value="My hospital">My hospital (demo)</option></select>
+                        <label for="city">Select area / city</label>
+                        <select id="city" class="text" required>
+                            <option value="">Select your area first</option>
+                            <option value="Visakhapatnam">Visakhapatnam</option>
+                            <option value="Vijayawada">Vijayawada</option>
+                            <option value="Hyderabad">Hyderabad</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="hospital">Available hospital in this area</label>
+                        <select id="hospital" class="text" required disabled>
+                            <option value="">Select an area first</option>
+                        </select>
+                        <small class="field-help">Prototype: one demo hospital is listed per area.</small>
                     </div>
                     <div class="field">
                         <label for="patientEmail">Registered email</label>
                         <input id="patientEmail" class="text" type="email" maxlength="254" placeholder="you@example.com" autocomplete="email" required>
                     </div>
-                    <div class="field">
-                        <label for="city">City</label>
-                        <input id="city" class="text" type="text" maxlength="100" placeholder="e.g. Vijayawada" required>
+                    <div class="field document-field">
+                        <label for="hospitalDocument">Hospital document (PDF only)</label>
+                        <input id="hospitalDocument" class="text" type="file" accept="application/pdf,.pdf" required>
+                        <small class="field-help">For this prototype, upload the fictional “My Hospital” demo PDF. Maximum 5 MB.</small>
                     </div>
                 </div>
 
@@ -123,7 +136,15 @@
                         <label class="check-row" for="donorConsent"><input id="donorConsent" type="checkbox" required><span>I consent to sharing my phone number with a matched requester by email.</span></label>
                     </div>
                     <div class="field">
-                        <label for="donorCity">City</label>
+                        
+                    <label for="donorCity">City</label>
+                    <select id="donorCity" name="city" required>
+                    <option value="">Select your city</option>
+                    <option value="Visakhapatnam">Visakhapatnam (Vizag)</option>
+                    <option value="Vijayawada">Vijayawada</option>
+                    <option value="Hyderabad">Hyderabad</option>
+                    </select>
+
                         <input id="donorCity" class="text" type="text" maxlength="100" placeholder="e.g. Vijayawada" required>
                     </div>
                 </div>

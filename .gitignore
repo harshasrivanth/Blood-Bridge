@@ -1,19 +1,20 @@
-# Python virtual environments
-backend/.venv/
-.venv/
-venv/
 
-# Secrets and local configuration
+# Environment variables and secrets
 .env
 .env.*
 !.env.example
 backend/.env
 
+# Python virtual environments
+.venv/
+venv/
+backend/.venv/
+
 # Python generated files
 __pycache__/
 *.py[cod]
 
-# Local database files
+# Local databases
 *.db
 *.sqlite3
 
