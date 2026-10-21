@@ -69,6 +69,13 @@ def initialize_database() -> None:
             column["name"]
             for column in inspect(engine).get_columns("hospitals")
         }
+        if "is_demo" not in hospital_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE hospitals ADD COLUMN "
+                    "is_demo BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+            )
         if "stamp_reference_text" not in hospital_columns:
             connection.execute(
                 text(
