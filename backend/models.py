@@ -1,6 +1,5 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float, func
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, func
 from database import Base
-
 
 
 class Donor(Base):
@@ -46,9 +45,8 @@ class Hospital(Base):
 
     hospital_id = Column(Integer, primary_key=True, index=True)
     name = Column(String(150), unique=True, nullable=False)
+    city = Column(String(100), nullable=False, default="")
     is_demo = Column(Boolean, default=True, nullable=False)
+    # Prototype text marker registered for this hospital; not an image/authenticity proof.
     stamp_reference_text = Column(String(100), nullable=True)
-    city = Column(String(100), nullable=True)
-    latitude = Column(Float, nullable=True)
-    longitude = Column(Float, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
