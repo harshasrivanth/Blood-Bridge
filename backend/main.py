@@ -1,4 +1,4 @@
-
+import re
 import json
 import os
 from contextlib import asynccontextmanager
@@ -441,22 +441,43 @@ async def create_blood_request(
 
     try:
         pdf = PdfReader(BytesIO(document_bytes))
-        document_text = "\n".join(page.extract_text() or "" for page in pdf.pages).upper()
+        raw_text = "\n".join(
+            page.extract_text() or ""
+            for page in pdf.pages
+        )
     except Exception:
-        raise HTTPException(status_code=400, detail="Could not read this PDF. Upload the provided demo sample.")
+        raise HTTPException(
+            status_code=400,
+            detail="Could not read this PDF. Upload the provided demo sample.",
+        )
 
-    # Match the uploaded PDF against the specific hospital selected by the user.
-    # This is a demo text-marker check only, not proof of real-world authenticity.
-    stamp_marker = (hospital.stamp_reference_text or "").strip().upper()
-    required_markers = [hospital.name.strip().upper(), "DEMO DOCUMENT"]
-    if not stamp_marker or not all(
-        marker in document_text for marker in [*required_markers, stamp_marker]
+    # Normalize case, punctuation, and line breaks before checking markers.
+    def normalize_pdf_text(value: str) -> str:
+        return " ".join(re.findall(r"[A-Z0-9]+", value.upper()))
+
+    document_text = normalize_pdf_text(raw_text)
+    stamp_marker = normalize_pdf_text(
+        hospital.stamp_reference_text or ""
+    )
+    hospital_marker = normalize_pdf_text(hospital.name)
+    demo_marker = normalize_pdf_text("DEMO DOCUMENT")
+
+    required_markers = [
+        hospital_marker,
+        demo_marker,
+        stamp_marker,
+    ]
+
+    if not all(required_markers) or not all(
+        marker in document_text
+        for marker in required_markers
     ):
         raise HTTPException(
             status_code=400,
             detail=(
-                "Demo verification failed. The PDF must contain the registered demo hospital "
-                "name and the required demo-only markers. No donor email was sent."
+                "Demo PDF verification failed. The searchable PDF must "
+                "contain the registered hospital name and required demo "
+                "markers. No donor email was sent."
             ),
         )
 
